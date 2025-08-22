@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import io from 'socket.io-client';
 import { Card, CardHeader, CardTitle, CardContent } from "@components/components/ui/card";
 import { Button } from "@components/components/ui/button";
+import { toast } from 'react-toastify';
 
 const API = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:4000';
 const WS = process.env.NEXT_PUBLIC_WS_BASE || 'http://localhost:4000';
@@ -36,43 +37,46 @@ export default function Page() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [connected, setConnected] = useState<boolean>(false);
   const socketRef = useRef<any>(null);
+  
 
   // ensure follower is not same as user
-  useEffect(()=>{
-    if(userId === followerId){
-      setFollowerId(userId === 1 ? 2 : 1);
-    }
-  }, [userId, followerId]);
+
 
   // Socket.io setup
-useEffect(() => {
+  useEffect(() => {
   const s = io(WS, { query: { user_id: userId.toString() } });
   socketRef.current = s;
 
-  s.on('connect', () => {
-    setConnected(true);
-    console.log("Socket connected");
-  });
+  s.on('connect', () => setConnected(true));
+  s.on('disconnect', () => setConnected(false));
 
-  s.on('disconnect', () => {
-    setConnected(false);
-    console.log("Socket disconnected");
-  });
+  // notifications
+  s.on('notification', (n: Notification) =>
+    setNotifications((cur) => [n, ...cur])
+  );
 
-  s.on('notification', (n: Notification) => {
-    console.log("Received notification:", n);
-    setNotifications((cur) => [n, ...cur]);
-  });
-
+  // new posts
   s.on('posts', (content: Content) => {
-    console.log("Received post:", content);
-    setPosts((cur) => [content, ...cur]);
+    if (content.author_id === userId) {
+      // my own post
+      setMyPosts((cur) => [content, ...cur]);
+    } else {
+      // other users' posts
+      setPosts((cur) => [content, ...cur]);
+    }
   });
 
+  // post updates (likes, etc.)
   s.on('posts:update', (updated: Content) => {
-    console.log("Post update received:", updated);
-    setPosts((cur) => cur.map((p) => p.id === updated.id ? updated : p));
-    setMyPosts((cur) => cur.map((p) => p.id === updated.id ? updated : p));
+    if (updated.author_id === userId) {
+      setMyPosts((cur) =>
+        cur.map((p) => (p.id === updated.id ? updated : p))
+      );
+    } else {
+      setPosts((cur) =>
+        cur.map((p) => (p.id === updated.id ? updated : p))
+      );
+    }
   });
 
   return () => {
@@ -82,19 +86,11 @@ useEffect(() => {
 }, [userId]);
 
 
-  // Fetch posts and notifications
+  // Fetch initial data
   useEffect(() => {
-    fetch(`${API}/posts?follower_id=${userId}`)
-      .then((r) => r.json())
-      .then((rows) => setMyPosts(rows));
-
-    fetch(`${API}/posts?follower_id=${followerId}`)
-      .then((r) => r.json())
-      .then((rows) => setPosts(rows));
-
-    fetch(`${API}/notifications?user_id=${userId}`)
-      .then((r) => r.json())
-      .then((rows) => setNotifications(rows));
+    fetch(`${API}/posts?follower_id=${userId}`).then((r) => r.json()).then(setMyPosts);
+    fetch(`${API}/posts?follower_id=${followerId}`).then((r) => r.json()).then(setPosts);
+    fetch(`${API}/notifications?user_id=${userId}`).then((r) => r.json()).then(setNotifications);
   }, [userId, followerId]);
 
   // Actions
@@ -113,6 +109,11 @@ useEffect(() => {
   };
 
   const followUser = async (actor: number, target: number) => {
+    if(actor===target){
+      toast("You cannot follow you 😂")
+      setFollowerId((prev)=>prev+1)
+      return 
+    }
     await fetch(`${API}/follows`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -135,92 +136,105 @@ useEffect(() => {
   };
 
   return (
-    <main className="flex flex-col min-h-screen">
-      {/* Top slim action bar */}
- {/* Top slim action bar */}
-<div className="flex justify-between items-center px-6 py-2 border-b bg-white shadow-sm">
-  {/* Follow Button */}
-    <div>
-      <input
-      type="number"
-      value={followerId}
-      min={1}
-      onChange={(e) => setFollowerId(parseInt(e.target.value || '1', 10))}
-      className="w-20 rounded-lg border px-3 py-1 text-center"
-    />
-  
-  <Button onClick={() => followUser(userId, followerId)}>➕ Follow {followerId}</Button>
-</div>
-  {/* User ID input */}
-  <div className="flex items-center gap-2">
-    <label className="text-sm">View as</label>
-    <input
-      type="number"
-      value={userId}
-      min={1}
-      onChange={(e) => setUserId(parseInt(e.target.value || '1', 10))}
-      className="w-20 rounded-lg border px-3 py-1 text-center"
-    />
-    <span className="text-sm">{connected ? '🟢 connected' : '🔴 disconnected'}</span>
-  </div>
+    <main className="flex flex-col min-h-screen bg-gray-50">
+      {/* Navbar */}
+      <div className="flex justify-between items-center px-6 py-3 border-b bg-white shadow-sm sticky top-0 z-10">
+        {/* Left - Follow */}
+        <div className="flex items-center gap-2">
+          <input
+            type="number"
+            value={followerId}
+            min={1}
+            onChange={(e) => setFollowerId(parseInt(e.target.value || '1', 10))}
+            className="w-20 rounded-lg border px-3 py-1 text-center text-sm"
+          />
+          <Button onClick={() => followUser(userId, followerId)}>➕ Follow {followerId}</Button>
+        </div>
 
-  {/* Create Post Button */}
-  <Button onClick={() => createPost(userId)}>✍️ Create Post</Button>
-</div>
+        {/* Center - Status */}
+        <div className="flex items-center gap-2">
+          <label className="text-sm font-medium">View as</label>
+          <input
+            type="number"
+            value={userId}
+            min={1}
+            onChange={(e) => setUserId(parseInt(e.target.value || '1', 10))}
+            className="w-20 rounded-lg border px-3 py-1 text-center text-sm"
+          />
+          <span className={`text-sm font-medium ${connected ? 'text-green-600' : 'text-red-600'}`}>
+            {connected ? '🟢 connected' : '🔴 disconnected'}
+          </span>
+        </div>
+
+        {/* Right - Create */}
+        <Button onClick={() => createPost(userId)} className="bg-blue-600 hover:bg-blue-700 text-white">
+          ✍️ Create Post
+        </Button>
+      </div>
 
       {/* Main 3-column layout */}
-      <div className="flex flex-1">
+      <div className="flex flex-1 divide-x">
         {/* My Posts */}
-        <div className="w-1/3 border-r p-4 overflow-y-auto">
+        <section className="w-1/3 p-4 overflow-y-auto">
           <h2 className="text-lg font-semibold mb-4">My Posts</h2>
-          {myPosts.length === 0 ? <p className="text-sm text-gray-500">You haven’t posted yet.</p> : (
+          {myPosts.length === 0 ? (
+            <p className="text-sm text-gray-500">You haven’t posted yet.</p>
+          ) : (
             myPosts.map((p) => (
-              <Card key={p.id} className="mb-4">
+              <Card key={p.id} className="mb-4 hover:shadow-md transition">
                 <CardHeader>
-                  <CardTitle>Post #{p.id}</CardTitle>
+                  <CardTitle className="text-base">Post #{p.id}</CardTitle>
                 </CardHeader>
-                <CardContent>
-                  <p>Author: {p.author_id} (me)</p>
-                  <p className="text-sm text-gray-500">Created: {p.created_at}</p>
-                  <p className="mt-1">Likes: {p.like}</p>
-                  <Button variant="outline" size="sm" className="mt-2" onClick={() => likeContent(userId, p.id)}>👍 Like</Button>
+                <CardContent className="text-sm">
+                  <p className="mb-1">Author: {p.author_id} (me)</p>
+                  <p className="text-gray-500">Created: {p.created_at}</p>
+                  <p className="mt-2 font-medium">Likes: {p.like}</p>
+                  <Button variant="outline" size="sm" className="mt-3" onClick={() => likeContent(userId, p.id)}>
+                    👍 Like
+                  </Button>
                 </CardContent>
               </Card>
             ))
           )}
-        </div>
+        </section>
 
         {/* Other Users' Posts */}
-        <div className="w-1/3 border-r p-4 overflow-y-auto">
+        <section className="w-1/3 p-4 overflow-y-auto">
           <h2 className="text-lg font-semibold mb-4">User {followerId}'s Posts</h2>
-          {posts.length === 0 ? <p className="text-sm text-gray-500">No posts yet.</p> : (
+          {posts.length === 0 ? (
+            <p className="text-sm text-gray-500">No posts yet.</p>
+          ) : (
             posts.map((post) => (
-              <Card key={post.id} className="mb-4">
+              <Card key={post.id} className="mb-4 hover:shadow-md transition">
                 <CardHeader>
-                  <CardTitle>Post #{post.id}</CardTitle>
+                  <CardTitle className="text-base">Post #{post.id}</CardTitle>
                 </CardHeader>
-                <CardContent>
-                  <p>Author: {post.author_id}</p>
-                  <p className="text-sm text-gray-500">Created: {post.created_at}</p>
-                  <p className="mt-1">Likes: {post.like}</p>
-                  <Button variant="outline" size="sm" className="mt-2" onClick={() => likeContent(userId, post.id)}>👍 Like</Button>
+                <CardContent className="text-sm">
+                  <p className="mb-1">Author: {post.author_id}</p>
+                  <p className="text-gray-500">Created: {post.created_at}</p>
+                  <p className="mt-2 font-medium">Likes: {post.like}</p>
+                  <Button variant="outline" size="sm" className="mt-3" onClick={() => likeContent(userId, post.id)}>
+                    👍 Like
+                  </Button>
                 </CardContent>
               </Card>
             ))
           )}
-        </div>
+        </section>
 
         {/* Notifications */}
-        <div className="w-1/3 p-4 overflow-y-auto">
+        <section className="w-1/3 p-4 overflow-y-auto">
           <h2 className="text-lg font-semibold mb-4">Notifications</h2>
-          {notifications.length === 0 ? <p className="text-sm text-gray-500">No notifications yet.</p> : (
+          {notifications.length === 0 ? (
+            <p className="text-sm text-gray-500">No notifications yet.</p>
+          ) : (
             notifications.map((n) => (
-              <Card key={n.id} className="mb-4">
+              <Card key={n.id} className="mb-4 hover:shadow-md transition">
                 <CardHeader>
-                  <CardTitle>{n.type.replace('_', ' ').toUpperCase()}</CardTitle>
+                  <CardTitle className="text-base">{n.type.replace('_', ' ').toUpperCase()}</CardTitle>
                 </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-gray-500">#{n.id} • {n.created_at}</p>
+                <CardContent className="text-sm">
+                  <p className="text-gray-500">#{n.id} • {n.created_at}</p>
                   <p>actor: {n.actor_id} → recipient: {n.recipient_id}</p>
                   {n.content_id && <p className="text-xs text-gray-600">content_id: {n.content_id}</p>}
                   <span className={`mt-2 inline-block text-xs px-2 py-1 rounded ${n.read ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
@@ -230,7 +244,7 @@ useEffect(() => {
               </Card>
             ))
           )}
-        </div>
+        </section>
       </div>
     </main>
   );

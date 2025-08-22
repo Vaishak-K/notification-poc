@@ -161,11 +161,15 @@ app.post('/events', (req, res) => {
   // get the newly created post
   const latestPost = db.prepare(`SELECT * FROM content WHERE author_id = ? ORDER BY id DESC LIMIT 1`).get(actor_id);
 
-  rows.forEach(r => {
-    recipients.add(r.follower_id);
-    // emit the post to the follower’s socket room
-    io.to(`room:user:${r.follower_id}`).emit("posts", latestPost);
-  });
+  // send to followers
+rows.forEach(r => {
+  recipients.add(r.follower_id);
+  io.to(`room:user:${r.follower_id}`).emit("posts", latestPost);
+});
+
+// also send to author (so they see their own post immediately)
+io.to(`room:user:${actor_id}`).emit("posts", latestPost);
+
 }
 
 
