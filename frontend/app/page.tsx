@@ -45,28 +45,42 @@ export default function Page() {
   }, [userId, followerId]);
 
   // Socket.io setup
-  useEffect(() => {
-    const s = io(WS, { query: { user_id: userId.toString() } });
-    socketRef.current = s;
+useEffect(() => {
+  const s = io(WS, { query: { user_id: userId.toString() } });
+  socketRef.current = s;
 
-    s.on('connect', () => setConnected(true));
-    s.on('disconnect', () => setConnected(false));
+  s.on('connect', () => {
+    setConnected(true);
+    console.log("Socket connected");
+  });
 
-    s.on('notification', (n: Notification) => {
-      setNotifications((cur) => [n, ...cur]);
-    });
+  s.on('disconnect', () => {
+    setConnected(false);
+    console.log("Socket disconnected");
+  });
 
-    s.on('posts', (content: Content) => {
-      setPosts((cur) => [content, ...cur]);
-    });
+  s.on('notification', (n: Notification) => {
+    console.log("Received notification:", n);
+    setNotifications((cur) => [n, ...cur]);
+  });
 
-    s.on('posts:update', (updated: Content) => {
-      setPosts((cur) => cur.map((p) => p.id === updated.id ? updated : p));
-      setMyPosts((cur) => cur.map((p) => p.id === updated.id ? updated : p));
-    });
+  s.on('posts', (content: Content) => {
+    console.log("Received post:", content);
+    setPosts((cur) => [content, ...cur]);
+  });
 
-    return () => s.disconnect();
-  }, [userId]);
+  s.on('posts:update', (updated: Content) => {
+    console.log("Post update received:", updated);
+    setPosts((cur) => cur.map((p) => p.id === updated.id ? updated : p));
+    setMyPosts((cur) => cur.map((p) => p.id === updated.id ? updated : p));
+  });
+
+  return () => {
+    s.disconnect();
+    console.log("Socket disconnected on cleanup");
+  };
+}, [userId]);
+
 
   // Fetch posts and notifications
   useEffect(() => {
@@ -126,8 +140,17 @@ export default function Page() {
  {/* Top slim action bar */}
 <div className="flex justify-between items-center px-6 py-2 border-b bg-white shadow-sm">
   {/* Follow Button */}
+    <div>
+      <input
+      type="number"
+      value={followerId}
+      min={1}
+      onChange={(e) => setFollowerId(parseInt(e.target.value || '1', 10))}
+      className="w-20 rounded-lg border px-3 py-1 text-center"
+    />
+  
   <Button onClick={() => followUser(userId, followerId)}>➕ Follow {followerId}</Button>
-
+</div>
   {/* User ID input */}
   <div className="flex items-center gap-2">
     <label className="text-sm">View as</label>
