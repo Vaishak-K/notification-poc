@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "node server.js",
     "start": "NODE_ENV=production node server.js",
-    "seed": "node seed.js"
+    "seed": "node seed.js",
+    "build":"echo 'No build required'"
   },
   "dependencies": {
     "better-sqlite3": "^9.4.0",
